@@ -307,6 +307,7 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
       (* If the request is HTTP version 1.0 then the request stream should be
          considered closed after the first request/response. *)
       let early_close = ref false in
+      Printf.printf "[DEBUG] cohttp.callback: %s\n" (Connection.to_string conn_id);
       (* Read the requests *)
       let req_stream = Lwt_stream.from (
         fun () ->
@@ -340,6 +341,7 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
       let res_stream =
         Lwt_stream.map_s (fun (req, body) ->
           try_lwt
+            Printf.printf "[DEBUG] call spec.callback\n";
             spec.callback conn_id req body
           with exn ->
             respond_error ~status:`Internal_server_error ~body:(Printexc.to_string exn) ()

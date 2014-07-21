@@ -75,6 +75,7 @@ module Make(IO : S.IO) = struct
     let open Code in
     read_line ic >>= function
     | Some request_line -> begin
+      Printf.printf "[DEBUG] cohttp.parse: %s\n" request_line;
       match Stringext.split request_line ~on:' ' with
       | [ meth_raw; path; http_ver_raw ] -> begin
           match method_of_string meth_raw, version_of_string http_ver_raw with

@@ -73,6 +73,7 @@ module Make(IO : S.IO) = struct
     IO.write oc "\r\n"
 
   let write_body {encoding} oc buf =
+    Printf.printf "[DEBUG] Response.write_body: %s\n" buf;
     Transfer_IO.write encoding oc buf
 
   let write_footer {encoding} oc =
