@@ -341,7 +341,7 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
       let res_stream =
         Lwt_stream.map_s (fun (req, body) ->
           try_lwt
-            Printf.printf "[DEBUG] call spec.callback\n";
+            Printf.printf "[DEBUG] cid=%s call spec.callback\n" (Connection.to_string conn_id);
             spec.callback conn_id req body
           with exn ->
             respond_error ~status:`Internal_server_error ~body:(Printexc.to_string exn) ()
@@ -358,6 +358,7 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
           else
             fun () -> return_unit
         in
+        Printf.printf "[DEBUG] cid=%s Response.write\n" (Connection.to_string conn_id);
         Response.write (fun res oc ->
           Cohttp_lwt_body.write_body ~flush (Response.write_body res oc) body
         ) res oc

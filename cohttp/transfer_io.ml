@@ -64,6 +64,7 @@ module Make(IO : S.IO) = struct
 
     (* TODO enforce that the correct length is written? *)
     let write oc buf =
+      Printf.printf "[DEBUG] Fixed.write\n";
       write oc buf
   end
   
