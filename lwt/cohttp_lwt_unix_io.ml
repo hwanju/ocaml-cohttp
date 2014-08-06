@@ -85,3 +85,7 @@ let write_line =
 
 let flush oc =
   Lwt_io.flush oc
+
+(* NOT implemented *)
+let get_request ic = None
+let set_request ic req = ()

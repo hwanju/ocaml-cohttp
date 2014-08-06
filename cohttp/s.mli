@@ -31,6 +31,9 @@ module type IO = sig
 
   val write : oc -> string -> unit t
   val flush : oc -> unit t
+
+  val get_request : ic -> string option
+  val set_request : ic -> string option -> unit
 end
 
 module type Http_io = sig

@@ -17,6 +17,7 @@
 
 open Cohttp
 open Lwt
+open Sexplib
 
 module type Net = sig
   module IO : S.IO
@@ -307,7 +308,7 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
       (* If the request is HTTP version 1.0 then the request stream should be
          considered closed after the first request/response. *)
       let early_close = ref false in
-      Printf.printf "[DEBUG] cohttp.callback: %s\n" (Connection.to_string conn_id);
+      Printf.printf "[DEBUG] cohttp.callback: conn_id=%s\n" (Connection.to_string conn_id);
       (* Read the requests *)
       let req_stream = Lwt_stream.from (
         fun () ->
@@ -321,6 +322,7 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
               return None
             | `Ok req -> begin
                 early_close := not (Request.is_keep_alive req);
+                IO.set_request ic (Some (Sexp.to_string (Request.sexp_of_t req)));
                 (* Ensure the input body has been fully read before reading again *)
                 match Request.has_body req with
                 | `Yes ->
@@ -361,7 +363,8 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
         Printf.printf "[DEBUG] cid=%s Response.write\n" (Connection.to_string conn_id);
         Response.write (fun res oc ->
           Cohttp_lwt_body.write_body ~flush (Response.write_body res oc) body
-        ) res oc
+        ) res oc >>
+          return (IO.set_request ic None)
       done
     in daemon_callback
 end
