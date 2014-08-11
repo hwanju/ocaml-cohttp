@@ -89,3 +89,5 @@ let flush oc =
 (* NOT implemented *)
 let get_request ic = None
 let set_request ic req = ()
+let get_response oc = None
+let set_response oc res = ()

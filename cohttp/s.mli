@@ -34,6 +34,8 @@ module type IO = sig
 
   val get_request : ic -> string option
   val set_request : ic -> string option -> unit
+  val get_response : oc -> string option
+  val set_response : oc -> string option -> unit
 end
 
 module type Http_io = sig

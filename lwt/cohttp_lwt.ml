@@ -316,35 +316,46 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
           then return None
           else
             Lwt_mutex.lock read_m >>= fun () ->
-            Request.read ic >>= function
-            | `Eof | `Invalid _ -> (* TODO: request logger for invalid req *)
-              Lwt_mutex.unlock read_m;
-              return None
-            | `Ok req -> begin
-                early_close := not (Request.is_keep_alive req);
-                IO.set_request ic (Some (Sexp.to_string (Request.sexp_of_t req)));
-                (* Ensure the input body has been fully read before reading again *)
-                match Request.has_body req with
-                | `Yes ->
-                  let body_stream = Cohttp_lwt_body.create_stream (Request.read_body_chunk req) ic in
-                  Lwt_stream.on_terminate body_stream (fun () -> Lwt_mutex.unlock read_m);
-                  let body = Cohttp_lwt_body.of_stream body_stream in
-                  (* The read_m remains locked until the caller reads the body *)
-                  return (Some (req, body))
-                (* TODO for now we are just repeating the old behaviour
-                 * of ignoring the body in the request. Perhaps it should
-                 * be changed it did for responses *)
-                | `No | `Unknown ->
-                  Lwt_mutex.unlock read_m;
-                  return (Some (req, `Empty))
-              end
+            match IO.get_request ic with
+            | Some req_str -> 
+                Printf.printf "[DEBUG] in-flight request is restored: %s\n" req_str;
+                if req_str = "" then return None else
+                return (Some ((Request.t_of_sexp (Sexp.of_string req_str)), `Empty))
+            | None ->
+              Request.read ic >>= function
+              | `Eof | `Invalid _ -> (* TODO: request logger for invalid req *)
+                Lwt_mutex.unlock read_m;
+                return None
+              | `Ok req -> begin
+                  early_close := not (Request.is_keep_alive req);
+                  IO.set_request ic (Some (Sexp.to_string (Request.sexp_of_t req)));
+                  (* Ensure the input body has been fully read before reading again *)
+                  match Request.has_body req with
+                  | `Yes ->
+                    let body_stream = Cohttp_lwt_body.create_stream (Request.read_body_chunk req) ic in
+                    Lwt_stream.on_terminate body_stream (fun () -> Lwt_mutex.unlock read_m);
+                    let body = Cohttp_lwt_body.of_stream body_stream in
+                    (* The read_m remains locked until the caller reads the body *)
+                    return (Some (req, body))
+                  (* TODO for now we are just repeating the old behaviour
+                   * of ignoring the body in the request. Perhaps it should
+                   * be changed it did for responses *)
+                  | `No | `Unknown ->
+                    Lwt_mutex.unlock read_m;
+                    return (Some (req, `Empty))
+                end
         ) in
       (* Map the requests onto a response stream to serialise out *)
       let res_stream =
         Lwt_stream.map_s (fun (req, body) ->
           try_lwt
             Printf.printf "[DEBUG] cid=%s call spec.callback\n" (Connection.to_string conn_id);
-            spec.callback conn_id req body
+            match IO.get_response oc with
+            | Some res_str ->   (* XXX: body is set "" *)
+                Printf.printf "[DEBUG] in-flight response is restored: %s\n" res_str;
+                return ((Response.t_of_sexp (Sexp.of_string res_str)), Cohttp_lwt_body.of_string "")
+            | None ->
+                spec.callback conn_id req body
           with exn ->
             respond_error ~status:`Internal_server_error ~body:(Printexc.to_string exn) ()
           finally Cohttp_lwt_body.drain_body body
@@ -360,11 +371,28 @@ module Make_server(IO:Cohttp.S.IO with type 'a t = 'a Lwt.t)
           else
             fun () -> return_unit
         in
+        let clear_channel ic oc =
+          Printf.printf "[DEBUG] cid=%s clear channel\n" (Connection.to_string conn_id);
+          IO.set_request ic None;
+          IO.set_response oc None;
+        in
         Printf.printf "[DEBUG] cid=%s Response.write\n" (Connection.to_string conn_id);
-        Response.write (fun res oc ->
-          Cohttp_lwt_body.write_body ~flush (Response.write_body res oc) body
-        ) res oc >>
-          return (IO.set_request ic None)
+        try_lwt
+          match IO.get_response oc with
+          | Some res_str ->   (* XXX: assume res is suspended while providing body *)
+            let res = Response.t_of_sexp (Sexp.of_string res_str) in
+            Cohttp_lwt_body.write_body ~flush (Response.write_body res oc) body >>
+            Response.write_footer res oc >>
+            return (clear_channel ic oc)
+          | None ->
+            IO.set_response oc (Some (Sexp.to_string (Response.sexp_of_t res)));
+            Response.write (fun res oc ->
+              Cohttp_lwt_body.write_body ~flush (Response.write_body res oc) body
+            ) res oc >>
+            return (clear_channel ic oc)
+        with exn ->
+          try_lwt IO.read ic 1 >>= fun _ -> return ()
+          with exn -> return ()
       done
     in daemon_callback
 end
